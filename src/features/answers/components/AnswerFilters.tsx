@@ -1,0 +1,6 @@
+import { Search } from 'lucide-react'
+import { subjectOptions } from '../utils/answerUtils'
+
+export function AnswerFilters({ query, subject, onQuery, onSubject }: { query: string; subject: string; onQuery: (v: string) => void; onSubject: (v: string) => void }) {
+  return <div className="space-y-3"><div className="relative max-w-2xl"><Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#8a84a6] dark:text-[#8f87b3]" size={18} /><input aria-label="Search answers" value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Search questions, topics or keywords..." className="!py-3 !pl-10 !pr-4" /></div><div className="flex gap-2 overflow-x-auto pb-1">{subjectOptions.map((item) => <button key={item} onClick={() => onSubject(item)} className={`min-h-10 shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition ${subject === item ? 'bg-[#6d4aff] text-white shadow-md shadow-[#6d4aff]/25 dark:bg-[#9d85ff] dark:text-[#130f24] dark:shadow-none' : 'bg-white text-[#4f4870] ring-1 ring-[#e4dcf7] hover:bg-[#ece6ff] hover:text-[#5530e6] dark:bg-[#1d1735] dark:text-[#c3bce0] dark:ring-[#352d5c] dark:hover:bg-[#272046] dark:hover:text-[#b8a6ff]'}`}>{item}</button>)}</div></div>
+}
