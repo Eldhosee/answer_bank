@@ -4,10 +4,10 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & { children: ReactNode; va
 
 export function Button({ children, variant = 'primary', className = '', ...props }: Props) {
   const styles = {
-    primary: 'bg-[#6d4aff] text-white shadow-md shadow-[#6d4aff]/25 hover:bg-[#5530e6] active:bg-[#4824cc] dark:bg-[#9d85ff] dark:text-[#130f24] dark:shadow-none dark:hover:bg-[#b8a6ff] dark:active:bg-[#c9bbff]',
-    secondary: 'border border-[#e4dcf7] bg-white text-[#1b1534] hover:bg-[#f8f5ff] dark:border-[#352d5c] dark:bg-[#272046] dark:text-[#f4f1ff] dark:hover:bg-[#2f2658]',
-    danger: 'border border-[#f9c4cc] bg-white text-[#d6264a] hover:bg-[#fff0f2] dark:border-[#7a2a3a] dark:bg-[#272046] dark:text-[#ff7a8c] dark:hover:bg-[#3a1f33]',
-    ghost: 'text-[#4f4870] hover:bg-[#ece6ff] dark:text-[#c3bce0] dark:hover:bg-[#272046]',
+    primary: 'bg-[var(--accent)] text-[var(--accent-contrast)] shadow-md shadow-[var(--accent)]/25 hover:bg-[var(--accent)] active:bg-[var(--accent-hover)] dark:bg-[var(--accent)] dark:text-[var(--accent-contrast)] dark:shadow-none dark:hover:bg-[var(--accent)] dark:active:bg-[var(--accent-hover)]',
+    secondary: 'border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] hover:bg-[var(--background)] dark:border-[var(--border)] dark:bg-[var(--surface)] dark:text-[var(--text-primary)] dark:hover:bg-[var(--surface-elevated)]',
+    danger: 'border border-[var(--danger-soft)] bg-[var(--surface)] text-[var(--danger)] hover:bg-[var(--danger-soft)] dark:border-[var(--danger-soft)] dark:bg-[var(--surface)] dark:text-[var(--danger)] dark:hover:bg-[var(--danger-soft)]',
+    ghost: 'text-[var(--text-secondary)] hover:bg-[var(--accent-soft)] dark:text-[var(--text-secondary)] dark:hover:bg-[var(--surface)]',
   }[variant]
-  return <button {...props} className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6d4aff] focus-visible:ring-offset-2 dark:focus-visible:ring-[#9d85ff] dark:focus-visible:ring-offset-[#130f24] ${styles} ${className}`}>{children}</button>
+  return <button {...props} className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 dark:focus-visible:ring-[var(--accent)] dark:focus-visible:ring-offset-[var(--background)] ${styles} ${className}`}>{children}</button>
 }

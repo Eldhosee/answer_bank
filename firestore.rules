@@ -1,16 +1,26 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function ownsFolder(folderId) {
+      return folderId == null || (exists(/databases/$(database)/documents/folders/$(folderId))
+        && get(/databases/$(database)/documents/folders/$(folderId)).data.ownerId == request.auth.uid);
+    }
     match /answers/{answerId} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid && (!('folderId' in request.resource.data) || ownsFolder(request.resource.data.folderId));
+      allow update: if request.auth != null && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == request.auth.uid && (!('folderId' in request.resource.data) || ownsFolder(request.resource.data.folderId));
+      allow delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
     }
     match /notes/{noteId} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid && (!('folderId' in request.resource.data) || ownsFolder(request.resource.data.folderId));
+      allow update: if request.auth != null && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == request.auth.uid && (!('folderId' in request.resource.data) || ownsFolder(request.resource.data.folderId));
+      allow delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
     }
     match /folders/{folderId} {
       allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
-      allow update: if request.auth != null && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid && (!('parentId' in request.resource.data) || ownsFolder(request.resource.data.parentId));
+      allow update: if request.auth != null && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == request.auth.uid && (!('parentId' in request.resource.data) || ownsFolder(request.resource.data.parentId));
       allow delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
     }
   }

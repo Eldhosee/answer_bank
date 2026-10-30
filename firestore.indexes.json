@@ -1,4 +1,10 @@
 {
-  "indexes": [],
+  "indexes": [
+    { "collectionGroup": "answers", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "ownerId", "order": "ASCENDING" }, { "fieldPath": "isPinned", "order": "ASCENDING" }] },
+    { "collectionGroup": "notes", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "ownerId", "order": "ASCENDING" }, { "fieldPath": "isPinned", "order": "ASCENDING" }] },
+    { "collectionGroup": "folders", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "ownerId", "order": "ASCENDING" }, { "fieldPath": "isPinned", "order": "ASCENDING" }] },
+    { "collectionGroup": "answers", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "ownerId", "order": "ASCENDING" }, { "fieldPath": "isFavourite", "order": "ASCENDING" }] },
+    { "collectionGroup": "notes", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "ownerId", "order": "ASCENDING" }, { "fieldPath": "isFavourite", "order": "ASCENDING" }] }
+  ],
   "fieldOverrides": []
 }

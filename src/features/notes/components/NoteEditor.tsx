@@ -1,44 +1,164 @@
-import { useRef } from 'react'
-import type { NoteBlock } from '../utils/noteDocument'
-import { NoteTable } from './NoteTable'
-import { parseClipboardTable, parseClipboardTextTable } from '../utils/clipboardTableParser'
+import { useEffect, useRef } from 'react'
+import { AlignCenter, AlignLeft, AlignRight, Bold, Heading1, Heading2, Heading3, Highlighter, Italic, Link, List, ListOrdered, Redo2, SeparatorHorizontal, Table2, Underline, Undo2, Quote } from 'lucide-react'
+import { hasRichFormatting, markdownToNoteHtml, plainTextToNoteHtml, sanitizeNoteHtml } from '../utils/richNoteHtml'
 
-export function NoteEditor({ blocks, onChange }: { blocks: NoteBlock[]; onChange: (blocks: NoteBlock[]) => void }) {
-  const fields = useRef(new Map<number, HTMLTextAreaElement>())
-  const updateText = (index: number, text: string) => onChange(blocks.map((block, i) => i === index && block.type === 'text' ? { ...block, text } : block))
-  const wrapSelection = (marker: string) => {
-    const entry = [...fields.current.entries()].find(([, field]) => field === document.activeElement)
-    if (!entry) return
-    const [index, field] = entry
-    const block = blocks[index]
-    if (block?.type !== 'text') return
-    const start = field.selectionStart, end = field.selectionEnd
-    const selected = block.text.slice(start, end)
-    const replacement = `${marker}${selected || 'text'}${marker}`
-    updateText(index, `${block.text.slice(0, start)}${replacement}${block.text.slice(end)}`)
-    requestAnimationFrame(() => { field.focus(); const cursor = start + marker.length; field.setSelectionRange(cursor, cursor + (selected ? selected.length : 4)) })
+type Props = { html: string; onChange: (html: string) => void }
+
+export function NoteEditor({ html, onChange }: Props) {
+  const editor = useRef<HTMLDivElement>(null)
+  const lastExternalHtml = useRef('')
+  const tableSelection = useRef<{ tableIndex: number; rowIndex: number; columnIndex: number } | null>(null)
+
+  useEffect(() => {
+    const clean = sanitizeNoteHtml(html)
+    if (editor.current && clean !== lastExternalHtml.current) editor.current.innerHTML = clean
+    lastExternalHtml.current = clean
+  }, [html])
+
+  const publish = () => {
+    if (!editor.current) return
+    const clean = sanitizeNoteHtml(editor.current.innerHTML)
+    if (clean !== editor.current.innerHTML) editor.current.innerHTML = clean
+    lastExternalHtml.current = clean
+    onChange(clean)
   }
-  const paste = (event: React.ClipboardEvent<HTMLTextAreaElement>, index: number) => {
-    const rows = parseClipboardTable(event.clipboardData.getData('text/html')) ?? parseClipboardTextTable(event.clipboardData.getData('text/plain'))
-    if (!rows) return
-    const block = blocks[index]
-    if (block?.type !== 'text') return
+
+  const command = (name: string, value?: string) => {
+    editor.current?.focus()
+    document.execCommand(name, false, value)
+    publish()
+  }
+
+  const setBlock = (tag: string) => command('formatBlock', tag)
+
+  const insertLink = () => {
+    const url = window.prompt('Enter a link (https:// or mailto:)')
+    if (!url) return
+    if (!/^(https?:\/\/|mailto:)/i.test(url.trim())) { window.alert('Use a link beginning with https:// or mailto:.'); return }
+    command('createLink', url.trim())
+  }
+
+  const insertTable = () => command('insertHTML', '<table><thead><tr><th>Heading 1</th><th>Heading 2</th><th>Heading 3</th></tr></thead><tbody><tr><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td></tr></tbody></table><p><br></p>')
+
+  const rememberTableSelection = () => {
+    const anchor = window.getSelection()?.anchorNode
+    const element = anchor instanceof Element ? anchor : anchor?.parentElement
+    const cell = element?.closest('td,th') as HTMLTableCellElement | null
+    const table = cell?.closest('table')
+    if (!editor.current || !cell || !table || !editor.current.contains(table)) return
+    tableSelection.current = {
+      tableIndex: [...editor.current.querySelectorAll('table')].indexOf(table),
+      rowIndex: [...table.rows].indexOf(cell.parentElement as HTMLTableRowElement),
+      columnIndex: cell.cellIndex,
+    }
+  }
+
+  const changeTable = (action: 'add-row' | 'remove-row' | 'add-column' | 'remove-column') => {
+    const selection = window.getSelection()
+    const anchor = selection?.anchorNode
+    const element = anchor instanceof Element ? anchor : anchor?.parentElement
+    let cell = element?.closest('td,th') as HTMLTableCellElement | null
+    let table = cell?.closest('table')
+    if ((!cell || !table || !editor.current?.contains(table)) && editor.current && tableSelection.current) {
+      const previous = tableSelection.current
+      table = editor.current.querySelectorAll('table')[previous.tableIndex] ?? null
+      cell = table?.rows[previous.rowIndex]?.cells[previous.columnIndex] ?? null
+    }
+    if (!cell || !table) { editor.current?.focus(); return }
+    const row = cell.parentElement as HTMLTableRowElement
+    const columnIndex = cell.cellIndex
+    const tableIndex = [...(editor.current?.querySelectorAll('table') ?? [])].indexOf(table)
+    const rowIndex = [...table.rows].indexOf(row)
+    if (action === 'add-row') {
+      const body = table.tBodies[0] ?? table.createTBody()
+      const added = body.insertRow()
+      for (let column = 0; column < Math.max(1, row.cells.length); column++) {
+        const newCell = added.insertCell()
+        newCell.innerHTML = '<br>'
+      }
+    } else if (action === 'remove-row') {
+      if (row.parentElement?.tagName.toLowerCase() === 'tbody' && table.tBodies[0].rows.length > 1) row.remove()
+    } else if (action === 'add-column') {
+      for (const tableRow of [...table.rows]) {
+        const newCell = tableRow.insertCell(columnIndex + 1)
+        if (tableRow.parentElement?.tagName.toLowerCase() === 'thead') newCell.outerHTML = '<th><br></th>'
+        else newCell.innerHTML = '<br>'
+      }
+    } else if (action === 'remove-column' && (table.rows[0]?.cells.length ?? 0) > 1) {
+      for (const tableRow of [...table.rows]) tableRow.cells[columnIndex]?.remove()
+    }
+    tableSelection.current = {
+      tableIndex,
+      rowIndex: action === 'add-row' ? Math.min(rowIndex, table.rows.length - 1) : action === 'remove-row' ? Math.min(rowIndex, table.rows.length - 1) : rowIndex,
+      columnIndex: action === 'add-column' ? columnIndex + 1 : action === 'remove-column' ? Math.max(0, columnIndex - 1) : columnIndex,
+    }
+    publish()
+    editor.current?.focus()
+  }
+
+  const paste = (event: React.ClipboardEvent<HTMLDivElement>) => {
     event.preventDefault()
-    const start = event.currentTarget.selectionStart, end = event.currentTarget.selectionEnd
-    const before = block.text.slice(0, start), after = block.text.slice(end)
-    const inserted: NoteBlock[] = [...(before ? [{ type: 'text', text: before } as const] : []), { type: 'table', rows }, ...(after ? [{ type: 'text', text: after } as const] : [])]
-    onChange([...blocks.slice(0, index), ...inserted, ...blocks.slice(index + 1)])
+    const htmlClipboard = event.clipboardData.getData('text/html')
+    const text = event.clipboardData.getData('text/plain')
+    let insertion = ''
+    if (htmlClipboard && hasRichFormatting(htmlClipboard)) insertion = sanitizeNoteHtml(htmlClipboard)
+    else if (text && looksLikeMarkdown(text)) insertion = markdownToNoteHtml(text)
+    else if (htmlClipboard) insertion = sanitizeNoteHtml(htmlClipboard)
+    else insertion = plainTextToNoteHtml(text)
+    document.execCommand('insertHTML', false, insertion)
+    publish()
   }
-  return <div className="space-y-3">
-    {blocks.map((block, index) => block.type === 'table' ? <div key={`table-${index}`}><NoteTable block={block} editable onChange={(rows) => onChange(blocks.map((item, i) => i === index && item.type === 'table' ? { ...item, rows } : item))} /><button type="button" className="min-h-9 px-2 text-xs text-[#8a84a6] hover:text-[#b64d4d] dark:text-[#8f87b3]" onClick={() => onChange(blocks.filter((_, i) => i !== index))}>Remove table</button></div> : <div key={`text-${index}`}>
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-medium text-[#8a84a6] dark:text-[#8f87b3]">Text</span><div className="flex items-center gap-1" aria-label="Text formatting"><FormatButton title="Bold" onClick={() => wrapSelection('**')}><strong>B</strong></FormatButton><FormatButton title="Italic" onClick={() => wrapSelection('*')}><em>I</em></FormatButton><FormatButton title="Underline" onClick={() => wrapSelection('__')}><u>U</u></FormatButton><FormatButton title="Highlight" onClick={() => wrapSelection('==')}>Highlight</FormatButton></div></div>
-      <p className="mb-2 text-xs text-[#8a84a6] dark:text-[#8f87b3]">Type **bold**, *italic*, __underline__, ==highlight==, &gt; callout, - bullet or 1. numbered list.</p>
-      <textarea ref={(node) => { if (node) fields.current.set(index, node); else fields.current.delete(index) }} aria-label="Note text" className="!min-h-[28vh] !bg-[#fbf9ff] !text-[15px] !leading-7 dark:!bg-[#272046]" value={block.text} onChange={(e) => updateText(index, e.target.value)} onPaste={(e) => paste(e, index)} placeholder="Write or paste your study note here..." />
-    </div>)}
-    <button type="button" className="min-h-10 rounded-lg px-3 text-sm font-medium text-[#6d4aff] hover:bg-[#f3efff] dark:text-[#b8a6ff] dark:hover:bg-[#272046]" onClick={() => onChange([...blocks, { type: 'text', text: '' }])}>+ Add text</button>
-  </div>
+
+  return <section className="space-y-2" aria-label="Rich text note editor">
+    <div className="flex flex-wrap items-center gap-1 rounded-xl border border-[var(--border)] bg-[var(--accent-soft)] p-2 dark:border-[var(--border)] dark:bg-[var(--surface)]" role="toolbar" aria-label="Note formatting">
+      <Tool title="Heading 1" onClick={() => setBlock('h1')}><Heading1 size={16} /></Tool>
+      <Tool title="Heading 2" onClick={() => setBlock('h2')}><Heading2 size={16} /></Tool>
+      <Tool title="Heading 3" onClick={() => setBlock('h3')}><Heading3 size={16} /></Tool>
+      <span className="mx-1 h-6 w-px bg-[var(--border)] dark:bg-[var(--border)]" />
+      <Tool title="Bold" onClick={() => command('bold')}><Bold size={16} /></Tool>
+      <Tool title="Italic" onClick={() => command('italic')}><Italic size={16} /></Tool>
+      <Tool title="Underline" onClick={() => command('underline')}><Underline size={16} /></Tool>
+      <Tool title="Highlight" onClick={() => command('hiliteColor', getComputedStyle(document.documentElement).getPropertyValue('--highlight-fact').trim())}><Highlighter size={16} /></Tool>
+      <span className="mx-1 h-6 w-px bg-[var(--border)] dark:bg-[var(--border)]" />
+      <Tool title="Bulleted list" onClick={() => command('insertUnorderedList')}><List size={16} /></Tool>
+      <Tool title="Numbered list" onClick={() => command('insertOrderedList')}><ListOrdered size={16} /></Tool>
+      <Tool title="Blockquote" onClick={() => setBlock('blockquote')}><Quote size={16} /></Tool>
+      <Tool title="Horizontal line" onClick={() => command('insertHorizontalRule')}><SeparatorHorizontal size={16} /></Tool>
+      <Tool title="Insert table" onClick={insertTable}><Table2 size={16} /></Tool>
+      <Tool title="Add table row" onClick={() => changeTable('add-row')}>+R</Tool>
+      <Tool title="Remove table row" onClick={() => changeTable('remove-row')}>−R</Tool>
+      <Tool title="Add table column" onClick={() => changeTable('add-column')}>+C</Tool>
+      <Tool title="Remove table column" onClick={() => changeTable('remove-column')}>−C</Tool>
+      <Tool title="Insert link" onClick={insertLink}><Link size={16} /></Tool>
+      <Tool title="Align left" onClick={() => command('justifyLeft')}><AlignLeft size={16} /></Tool>
+      <Tool title="Align center" onClick={() => command('justifyCenter')}><AlignCenter size={16} /></Tool>
+      <Tool title="Align right" onClick={() => command('justifyRight')}><AlignRight size={16} /></Tool>
+      <span className="mx-1 h-6 w-px bg-[var(--border)] dark:bg-[var(--border)]" />
+      <Tool title="Undo" onClick={() => command('undo')}><Undo2 size={16} /></Tool>
+      <Tool title="Redo" onClick={() => command('redo')}><Redo2 size={16} /></Tool>
+    </div>
+    <div
+      ref={editor}
+      aria-label="Note content"
+      aria-multiline="true"
+      contentEditable
+      suppressContentEditableWarning
+      className="note-editor min-h-[45vh] rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-4 text-[15px] leading-7 text-[var(--text-primary)] outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 dark:border-[var(--border)] dark:bg-[var(--surface)] dark:text-[var(--text-primary)] sm:px-6"
+      data-placeholder="Write or paste your study note here..."
+      onInput={publish}
+      onMouseUp={rememberTableSelection}
+      onKeyUp={rememberTableSelection}
+      onPaste={paste}
+    />
+    <p className="text-xs text-[var(--text-muted)] dark:text-[var(--text-muted)]">Paste rich text, Markdown, or plain text. Markdown headings, lists, and tables are formatted automatically.</p>
+  </section>
 }
 
-function FormatButton({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
-  return <button type="button" title={title} aria-label={title} onMouseDown={(e) => e.preventDefault()} onClick={onClick} className="min-h-8 rounded-lg border border-[#e4dcf7] bg-white px-2.5 text-xs text-[#4f4870] hover:bg-[#f8f5ff] dark:border-[#352d5c] dark:bg-[#272046] dark:text-[#c3bce0] dark:hover:bg-[#2f2658]">{children}</button>
+function Tool({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
+  return <button type="button" title={title} aria-label={title} onMouseDown={(event) => event.preventDefault()} onClick={onClick} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-transparent px-2 text-[var(--text-secondary)] hover:border-[var(--border)] hover:bg-[var(--surface)] dark:text-[var(--text-secondary)] dark:hover:border-[var(--border)] dark:hover:bg-[var(--border)]">{children}</button>
+}
+
+function looksLikeMarkdown(text: string): boolean {
+  return /(^|\n)\s*(#{1,3}\s|>\s?|[-+*]\s+|\d+[.)]\s+|\|.+\|\s*$|(?:---+|___+))/.test(text)
+    || /\*\*[^*]+\*\*|__[^_]+__|==[^=]+==|\[[^\]]+\]\([^)]+\)/.test(text)
 }

@@ -1,10 +1,13 @@
-import { addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import { db, firebaseConfigured } from '../../../firebase/config'
 import { ensureAnonymousUser } from '../../../firebase/auth'
+import { readThroughCache, updateCached } from '../../../shared/clientCache'
 import type { Answer, AnswerInput } from '../models/answer'
 
 const COLLECTION = 'answers'
 const LOCAL_KEY = 'nabard-answer-bank-answers'
+const CACHE_KEY = 'answers:local'
+const cacheKey = (uid: string) => `answers:${uid}`
 
 const demoAnswers: Answer[] = [
   {
@@ -48,11 +51,18 @@ function readLocal(): Answer[] {
 function writeLocal(items: Answer[]) { localStorage.setItem(LOCAL_KEY, JSON.stringify(items)) }
 
 export async function listAnswers(): Promise<Answer[]> {
-  if (!firebaseConfigured || !db) return readLocal()
-  await ensureAnonymousUser()
-  const snapshot = await getDocs(query(collection(db, COLLECTION), orderBy('createdAt', 'desc')))
-  return snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Answer, 'id'>) }))
+  if (!firebaseConfigured || !db) return readThroughCache(CACHE_KEY, async () => readLocal())
+  const user = await ensureAnonymousUser()
+  if (!user) throw new Error('Could not authenticate to access answers.')
+  const firestore = db
+  if (!firestore) throw new Error('Firebase is not configured.')
+  return readThroughCache(cacheKey(user.uid), async () => {
+    const snapshot = await getDocs(query(collection(firestore, COLLECTION), where('ownerId', '==', user.uid)))
+    return snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Answer, 'id'>) })).sort((a, b) => answerTime(b.createdAt) - answerTime(a.createdAt))
+  })
 }
+
+function answerTime(value: Answer['createdAt']): number { if (!value) return 0; return typeof value === 'object' && 'toDate' in value ? value.toDate().getTime() : 0 }
 
 export async function getAnswer(id: string): Promise<Answer | null> {
   const answers = await listAnswers()
@@ -62,32 +72,82 @@ export async function getAnswer(id: string): Promise<Answer | null> {
 export async function createAnswer(input: AnswerInput) {
   if (!firebaseConfigured || !db) {
     const item: Answer = { ...input, id: crypto.randomUUID() }
-    writeLocal([item, ...readLocal()])
+    const items = [item, ...readLocal()]
+    writeLocal(items); updateCached<Answer[]>(CACHE_KEY, () => items)
     return item.id
   }
-  await ensureAnonymousUser()
-  const ref = await addDoc(collection(db, COLLECTION), { ...input, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+  const user = await ensureAnonymousUser()
+  if (!user) throw new Error('Could not authenticate to save the answer.')
+  const firestore = db
+  if (!firestore) throw new Error('Firebase is not configured.')
+  const ref = await addDoc(collection(firestore, COLLECTION), { ...input, ownerId: user.uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
+  updateCached<Answer[]>(cacheKey(user.uid), (items) => [{ ...input, id: ref.id, ownerId: user.uid, createdAt: new Date(), updatedAt: new Date() }, ...items])
   return ref.id
 }
 
 export async function updateAnswer(id: string, input: AnswerInput) {
   if (!firebaseConfigured || !db) {
-    writeLocal(readLocal().map((item) => item.id === id ? { ...item, ...input } : item))
+    const items = readLocal().map((item) => item.id === id ? { ...item, ...input } : item)
+    writeLocal(items); updateCached<Answer[]>(CACHE_KEY, () => items)
     return
   }
-  await ensureAnonymousUser()
-  await updateDoc(doc(db, COLLECTION, id), { ...input, updatedAt: serverTimestamp() })
+  const user = await ensureAnonymousUser()
+  if (!user) throw new Error('Could not authenticate to update the answer.')
+  await updateDoc(doc(db, COLLECTION, id), { ...input, ownerId: user.uid, updatedAt: serverTimestamp() })
+  updateCached<Answer[]>(cacheKey(user.uid), (items) => items.map((item) => item.id === id ? { ...item, ...input, ownerId: user.uid, updatedAt: new Date() } : item))
 }
 
 export async function deleteAnswer(id: string) {
   if (!firebaseConfigured || !db) {
-    writeLocal(readLocal().filter((item) => item.id !== id))
+    const items = readLocal().filter((item) => item.id !== id)
+    writeLocal(items); updateCached<Answer[]>(CACHE_KEY, () => items)
     return
   }
-  await ensureAnonymousUser()
+  const user = await ensureAnonymousUser()
+  if (!user) throw new Error('Could not authenticate to delete the answer.')
   await deleteDoc(doc(db, COLLECTION, id))
+  updateCached<Answer[]>(cacheKey(user.uid), (items) => items.filter((item) => item.id !== id))
 }
 
 export async function toggleFavourite(answer: Answer) {
   return updateAnswer(answer.id, { ...answer, isFavourite: !answer.isFavourite })
+}
+
+export async function setAnswerPinned(answer: Answer, isPinned: boolean) {
+  const pinnedAt = isPinned ? new Date() : null
+  if (!firebaseConfigured || !db) {
+    const items = readLocal().map((item) => item.id === answer.id ? { ...item, isPinned, pinnedAt: pinnedAt?.toISOString() ?? null } : item)
+    writeLocal(items); updateCached<Answer[]>(CACHE_KEY, () => items); return
+  }
+  const user = await ensureAnonymousUser()
+  if (!user) throw new Error('Could not authenticate to update the answer.')
+  await updateDoc(doc(db, COLLECTION, answer.id), { isPinned, pinnedAt: isPinned ? serverTimestamp() : null, ownerId: user.uid })
+  updateCached<Answer[]>(cacheKey(user.uid), (items) => items.map((item) => item.id === answer.id ? { ...item, isPinned, pinnedAt } : item))
+}
+
+export async function listPinnedAnswers(): Promise<Answer[]> {
+  if (!firebaseConfigured || !db) return readLocal().filter((item) => item.isPinned)
+  const user = await ensureAnonymousUser()
+  if (!user) throw new Error('Could not authenticate to access answers.')
+  const snapshot = await getDocs(query(collection(db, COLLECTION), where('ownerId', '==', user.uid), where('isPinned', '==', true)))
+  return snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Answer, 'id'>) }))
+}
+
+export async function setAnswerFavourite(answer: Answer, isFavourite: boolean) {
+  if (!firebaseConfigured || !db) {
+    const items = readLocal().map((item) => item.id === answer.id ? { ...item, isFavourite } : item)
+    writeLocal(items); updateCached<Answer[]>(CACHE_KEY, () => items); return
+  }
+  const user = await ensureAnonymousUser()
+  if (!user) throw new Error('Could not authenticate to update the answer.')
+  await updateDoc(doc(db, COLLECTION, answer.id), { isFavourite, ownerId: user.uid })
+  updateCached<Answer[]>(cacheKey(user.uid), (items) => items.map((item) => item.id === answer.id ? { ...item, isFavourite } : item))
+}
+
+export async function listFavouriteAnswers(): Promise<Answer[]> {
+  if (!firebaseConfigured || !db) return readLocal().filter((item) => item.isFavourite)
+  const user = await ensureAnonymousUser()
+  if (!user) throw new Error('Could not authenticate to access answers.')
+  const snapshot = await getDocs(query(collection(db, COLLECTION), where('ownerId', '==', user.uid), where('isFavourite', '==', true)))
+  return snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<Answer, 'id'>) }))
 }

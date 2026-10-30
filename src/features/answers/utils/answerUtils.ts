@@ -6,7 +6,7 @@ export function filterAnswers(answers: Answer[], query: string, subject: string)
   const q = query.trim().toLowerCase()
   return answers.filter((item) => {
     const subjectMatch = subject === 'All' || item.subject === subject
-    const text = `${item.question} ${item.topic} ${item.answer}`.toLowerCase()
+    const text = `${item.question} ${item.topic} ${item.subject} ${item.answer}`.toLowerCase()
     return subjectMatch && (!q || text.includes(q))
   })
 }

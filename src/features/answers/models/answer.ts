@@ -11,8 +11,12 @@ export type Answer = {
   wordLimit: number
   answer: string
   isFavourite: boolean
-  createdAt?: Timestamp | null
-  updatedAt?: Timestamp | null
+  folderId?: string | null
+  ownerId?: string
+  createdAt?: Timestamp | Date | string | null
+  updatedAt?: Timestamp | Date | string | null
+  isPinned?: boolean
+  pinnedAt?: Timestamp | Date | string | null
 }
 
 export type AnswerInput = Omit<Answer, 'id' | 'createdAt' | 'updatedAt'>

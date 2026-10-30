@@ -4,4 +4,6 @@ export type Folder = {
   parentId: string | null
   createdAt?: unknown
   updatedAt?: unknown
+  isPinned?: boolean
+  pinnedAt?: unknown
 }

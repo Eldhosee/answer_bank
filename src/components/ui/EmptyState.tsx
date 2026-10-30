@@ -1,3 +1,3 @@
 export function EmptyState({ title, description }: { title: string; description: string }) {
-  return <div className="rounded-2xl border border-dashed border-[#cfc6ee] bg-white p-8 text-center dark:border-[#4a3f7a] dark:bg-[#1d1735]"><h3 className="text-lg font-semibold text-[#1b1534] dark:text-[#f4f1ff]">{title}</h3><p className="mt-2 text-sm text-[#8a84a6] dark:text-[#8f87b3]">{description}</p></div>
+  return <div className="rounded-2xl border border-dashed border-[var(--accent-soft)] bg-[var(--surface)] p-8 text-center dark:border-[var(--border)] dark:bg-[var(--surface)]"><h3 className="text-lg font-semibold text-[var(--text-primary)] dark:text-[var(--text-primary)]">{title}</h3><p className="mt-2 text-sm text-[var(--text-muted)] dark:text-[var(--text-muted)]">{description}</p></div>
 }
