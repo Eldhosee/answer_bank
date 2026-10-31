@@ -1,6 +1,6 @@
 import { addDoc, collection, doc, getDocs, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore'
 import { db, firebaseConfigured } from '../../../firebase/config'
-import { ensureAnonymousUser } from '../../../firebase/auth'
+import { getAuthenticatedUser } from '../../../firebase/auth'
 import type { Folder } from '../models/folder'
 import { listNotes } from './notesService'
 import { listAnswers } from '../../answers/services/answerService'
@@ -12,7 +12,7 @@ const cacheKey = (uid: string) => `folders:${uid}`
 function readLocal(): Folder[] { try { return JSON.parse(localStorage.getItem(LOCAL_KEY) ?? '[]') as Folder[] } catch { return [] } }
 function writeLocal(folders: Folder[]) { localStorage.setItem(LOCAL_KEY, JSON.stringify(folders)) }
 async function foldersCollection() {
-  const user = await ensureAnonymousUser()
+  const user = await getAuthenticatedUser()
   if (!db || !user) throw new Error('Could not authenticate to access folders.')
   return { collection: collection(db, 'folders'), user }
 }
@@ -114,7 +114,7 @@ export async function deleteFolderTree(id: string, moveTo: string | null = null)
     updateCached('answers:local', (items: typeof answers) => items.map((answer) => affectedAnswers.some((item) => item.id === answer.id) ? { ...answer, folderId: moveTo, updatedAt: new Date().toISOString() } : answer))
     return
   }
-  const user = await ensureAnonymousUser()
+  const user = await getAuthenticatedUser()
   const firestore = db
   if (!user || !firestore) throw new Error('Could not authenticate to delete folder.')
   const writes: Array<(batch: ReturnType<typeof writeBatch>) => void> = []

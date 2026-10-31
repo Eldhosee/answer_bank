@@ -1,6 +1,6 @@
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import { db, firebaseConfigured } from '../../../firebase/config'
-import { ensureAnonymousUser } from '../../../firebase/auth'
+import { getAuthenticatedUser } from '../../../firebase/auth'
 import type { Note, NoteInput } from '../models/note'
 import { readThroughCache, updateCached } from '../../../shared/clientCache'
 
@@ -15,7 +15,7 @@ function readLocal(): Note[] {
 function writeLocal(notes: Note[]) { localStorage.setItem(LOCAL_KEY, JSON.stringify(notes)) }
 
 async function userNotesCollection() {
-  const user = await ensureAnonymousUser()
+  const user = await getAuthenticatedUser()
   if (!db || !user) throw new Error('Could not authenticate to save notes.')
   return { notes: collection(db, 'notes'), uid: user.uid }
 }
@@ -34,7 +34,7 @@ function noteTime(value: unknown): number { if (typeof value === 'string' || typ
 export async function getNote(id: string): Promise<Note | null> {
   if (!firebaseConfigured || !db) return (await listNotes()).find((note) => note.id === id) ?? null
   const firestore = db
-  const user = await ensureAnonymousUser()
+  const user = await getAuthenticatedUser()
   if (!user) throw new Error('Could not authenticate to access this note.')
   return readThroughCache(`note:${user.uid}:${id}`, async () => {
     const snapshot = await getDoc(doc(firestore, 'notes', id))

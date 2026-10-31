@@ -7,7 +7,7 @@ A simple, responsive personal web app for storing and reading NABARD answer-writ
 - React + TypeScript + Vite
 - Tailwind CSS v4
 - Firebase Firestore persistence
-- Firebase anonymous authentication for basic Firestore protection
+- Firebase Authentication with anonymous sessions and Google account linking
 - Responsive desktop and mobile UI
 - Light and dark mode
 - Search across questions, topics and answer text
@@ -43,10 +43,10 @@ The app uses sample answers and localStorage when Firebase environment variables
 1. Create a project in Firebase Console.
 2. Create a Web App inside the Firebase project.
 3. Enable **Cloud Firestore**.
-4. Enable **Authentication → Sign-in method → Anonymous**.
-5. Copy `.env.example` to `.env`.
-6. Fill in the Firebase web-app values.
-7. Restart the Vite dev server.
+4. Enable **Authentication → Sign-in method → Anonymous** and **Google**.
+5. Add `localhost` and your Vercel/custom production hostnames under **Authentication → Settings → Authorized domains**.
+6. Create a local `.env` file using the Firebase web-app values below.
+7. Use the same Firebase project in local and Vercel settings if both environments should see the same data, then restart the Vite dev server.
 
 Example `.env`:
 
@@ -61,11 +61,11 @@ VITE_FIREBASE_APP_ID=...
 
 Do not commit `.env` to Git. It is ignored by `.gitignore`.
 
-## 5. Firestore rules
+## 5. Authentication and Firestore ownership
 
-The included `firestore.rules` allows reads and writes only for authenticated users. The app signs the user in anonymously, so there is no login screen in this simple version.
+The app preserves the existing anonymous Firebase UID and offers to link Google to that account. Linking keeps the same UID and existing `ownerId` data. Google sign-in uses a popup; popup cancellation or blocking does not modify the account. If the Google credential already belongs to another Firebase UID, the app stops without switching accounts or merging data.
 
-For a personal app, this keeps the first version simple while still avoiding an openly writable Firestore collection.
+All Firestore operations remain scoped by the authenticated UID, and `firestore.rules` continues to enforce `ownerId` ownership. Review [docs/google-auth-migration.md](./docs/google-auth-migration.md) before linking if data was created from both localhost and production: anonymous sessions on different origins can have different UIDs and must not be automatically merged.
 
 ## 6. Build
 
