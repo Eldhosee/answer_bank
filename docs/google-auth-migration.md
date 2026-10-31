@@ -19,7 +19,11 @@ Before linking Google when data was created on more than one origin:
 5. Test the migration against a backup or staging project first. Verify counts, relationships, and access under the canonical UID before linking Google. Keep the backup until verification is complete.
 6. Link Google on the canonical origin. If Firebase reports `auth/credential-already-in-use`, stop: the existing Google account belongs to another UID. Do not retry by switching accounts or merging automatically. Revisit the inventory and migration decision first.
 
-The existing `scripts/migrate-legacy-ownership.mjs` is only for documents with a missing or null `ownerId`; it deliberately does not reassign any non-null owner and is not a multi-UID merge tool. Do not run it as a substitute for the migration above.
+The standalone `scripts\migrate-owner-ids.mjs` can update documents that
+already have a non-empty string `ownerId`; documents without a valid owner are
+left unchanged. It is not a cross-project import tool. Review
+[the script procedure](./legacy-ownership-migration.md), its dry-run output,
+and its local backup before explicitly applying any update.
 
 ## Firebase and deployment setup
 

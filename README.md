@@ -67,6 +67,18 @@ The app preserves the existing anonymous Firebase UID and offers to link Google 
 
 All Firestore operations remain scoped by the authenticated UID, and `firestore.rules` continues to enforce `ownerId` ownership. Review [docs/google-auth-migration.md](./docs/google-auth-migration.md) before linking if data was created from both localhost and production: anonymous sessions on different origins can have different UIDs and must not be automatically merged.
 
+For a one-time owner-ID update, use the standalone Admin SDK script at `scripts/migrate-owner-ids.mjs`. It defaults to a read-only dry run; review its output and generated local backup before running it with `--apply` and an exact UID confirmation. It requires Application Default Credentials with Firebase Auth read and Firestore read/write access. The script does not change application authentication or Firestore rules.
+
+```powershell
+$targetUid = "PASTE_VERIFIED_GOOGLE_FIREBASE_UID"
+
+# Dry run
+node --env-file=.env scripts\migrate-owner-ids.mjs --target-uid $targetUid
+
+# Actual update, only after reviewing the dry run and backup requirements
+node --env-file=.env scripts\migrate-owner-ids.mjs --target-uid $targetUid --apply --confirm-target-uid $targetUid
+```
+
 ## 6. Build
 
 ```bash

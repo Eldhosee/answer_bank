@@ -1,5 +1,20 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { GoogleAuthProvider, linkWithPopup, signInWithPopup, signOut, type User } from 'firebase/auth'
+
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react'
+
+import {
+  GoogleAuthProvider,
+  linkWithPopup,
+  signInWithPopup,
+  signOut,
+  type User,
+} from 'firebase/auth'
+
 import { auth, firebaseConfigured } from './config'
 import { signInAnonymouslyIfNeeded, watchUser } from './auth'
 
@@ -10,10 +25,12 @@ type AuthContextValue = {
   user: User | null
   error: string | null
   signInWithGoogle: () => Promise<void>
+  switchToGoogleAccount: () => Promise<void>
   signOutUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+
 const SIGNED_OUT_KEY = 'nabard-answer-bank-signed-out'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -29,7 +46,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return watchUser((nextUser) => {
       if (nextUser) {
-        if (import.meta.env.DEV) console.info('[firebase] authenticated UID', nextUser.uid)
+        if (import.meta.env.DEV) {
+          console.info('[firebase] authenticated UID', nextUser.uid)
+        }
+
         setUser(nextUser)
         setError(null)
         setStatus('authenticated')
@@ -37,12 +57,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(null)
+
       if (window.localStorage.getItem(SIGNED_OUT_KEY) === 'true') {
         setStatus('signed-out')
         return
       }
 
       setStatus('loading')
+
       void signInAnonymouslyIfNeeded().catch((authError: unknown) => {
         setError(toAuthErrorMessage(authError))
         setStatus('signed-out')
@@ -50,8 +72,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  // Link Google to the CURRENT anonymous account.
+  // This preserves the current anonymous UID.
   const signInWithGoogle = async () => {
-    if (!auth || !firebaseConfigured) throw new Error('Google sign-in is unavailable because Firebase is not configured.')
+    if (!auth || !firebaseConfigured) {
+      throw new Error('Firebase is not configured.')
+    }
+
     const provider = new GoogleAuthProvider()
     provider.setCustomParameters({ prompt: 'select_account' })
 
@@ -60,12 +87,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else {
       await signInWithPopup(auth, provider)
     }
+
     window.localStorage.removeItem(SIGNED_OUT_KEY)
   }
 
-  const signOutUser = async () => {
-    if (!auth || !firebaseConfigured) throw new Error('Sign-out is unavailable because Firebase is not configured.')
+  // Switch to an EXISTING Google account.
+  // Do not link Google to the anonymous account.
+  const switchToGoogleAccount = async () => {
+    if (!auth || !firebaseConfigured) {
+      throw new Error('Firebase is not configured.')
+    }
+
+    const provider = new GoogleAuthProvider()
+    provider.setCustomParameters({ prompt: 'select_account' })
+
+    // Prevent automatic anonymous sign-in during the switch.
     window.localStorage.setItem(SIGNED_OUT_KEY, 'true')
+
+    try {
+      if (auth.currentUser) {
+        await signOut(auth)
+      }
+
+      // Authenticate directly with the existing Google account.
+      await signInWithPopup(auth, provider)
+
+      window.localStorage.removeItem(SIGNED_OUT_KEY)
+    } catch (switchError) {
+      // Remain signed out if switching fails.
+      // Never delete the previous anonymous account or its data.
+      throw switchError
+    }
+  }
+
+  const signOutUser = async () => {
+    if (!auth || !firebaseConfigured) {
+      throw new Error('Firebase is not configured.')
+    }
+
+    window.localStorage.setItem(SIGNED_OUT_KEY, 'true')
+
     try {
       await signOut(auth)
     } catch (signOutError) {
@@ -74,34 +135,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  return <AuthContext.Provider value={{ status, user, error, signInWithGoogle, signOutUser }}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider
+      value={{
+        status,
+        user,
+        error,
+        signInWithGoogle,
+        switchToGoogleAccount,
+        signOutUser,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
 export function useAuth() {
   const context = useContext(AuthContext)
-  if (!context) throw new Error('useAuth must be used within AuthProvider.')
+
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider.')
+  }
+
   return context
 }
 
 export function toAuthErrorMessage(error: unknown): string {
-  const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
-  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-    return 'Google sign-in was cancelled. No account or data was changed.'
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String(error.code)
+      : ''
+
+  if (
+    code === 'auth/popup-closed-by-user' ||
+    code === 'auth/cancelled-popup-request'
+  ) {
+    return 'Google sign-in was cancelled. Please try again.'
   }
+
   if (code === 'auth/popup-blocked') {
-    return 'The sign-in popup was blocked. Allow popups for this site and try again.'
+    return 'The sign-in popup was blocked. Allow popups and try again.'
   }
-  if (code === 'auth/credential-already-in-use' || code === 'auth/account-exists-with-different-credential') {
-    return 'This Google account is already linked to a different Firebase account. Your current account and its data were not changed. Do not switch accounts or merge automatically; follow the migration guide before continuing.'
+
+  if (
+    code === 'auth/credential-already-in-use' ||
+    code === 'auth/account-exists-with-different-credential'
+  ) {
+    return 'This Google account is already linked elsewhere. Try switching to the existing Google account instead of linking.'
   }
+
   if (code === 'auth/unauthorized-domain') {
-    return 'This site is not authorized for Firebase Authentication. Add its hostname under Firebase Authentication → Settings → Authorized domains.'
+    return 'This domain is not authorized in Firebase Authentication settings.'
   }
+
   if (code === 'auth/operation-not-allowed') {
-    return 'Google sign-in is not enabled for this Firebase project. Enable Google under Authentication → Sign-in method.'
+    return 'Google sign-in is not enabled in Firebase Console.'
   }
+
   if (code === 'auth/network-request-failed') {
-    return 'A network error interrupted Google sign-in. Check your connection and try again.'
+    return 'Network error. Check your internet connection.'
   }
-  return error instanceof Error ? error.message : 'Google sign-in failed. Please try again.'
+
+  return error instanceof Error
+    ? error.message
+    : 'Google sign-in failed. Please try again.'
 }
